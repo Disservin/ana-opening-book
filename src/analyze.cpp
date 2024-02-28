@@ -166,6 +166,25 @@ void filter_files_book(std::vector<std::string> &file_list,
                   file_list.end());
 }
 
+void filter_files_sprt(std::vector<std::string> &file_list,
+                       const map_meta &meta_map) {
+  const auto pred = [&meta_map](const std::string &pathname) {
+    std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
+
+    // check if metadata and "sprt" entry exist
+    if (meta_map.find(test_filename) != meta_map.end() &&
+        meta_map.at(test_filename).sprt.has_value() &&
+        meta_map.at(test_filename).sprt.value()) {
+      return false;
+    }
+
+    return true;
+  };
+
+  file_list.erase(std::remove_if(file_list.begin(), file_list.end(), pred),
+                  file_list.end());
+}
+
 void analyze_pgn(const std::vector<std::string> &files,
                  const CLIOptions &options) {
   for (const auto &file : files) {
@@ -196,16 +215,22 @@ void analyze_pgn(const std::vector<std::string> &files,
 void process(const CLIOptions &options) {
   int target_chunks = 4 * options.concurrency;
 
-  auto files_pgn = get_files(options.path, true);
+  auto files_pgn = get_files(options.dir, true);
+
+  const auto meta_map = get_metadata(files_pgn, options.allow_duplicates);
 
   if (!options.match_book.empty()) {
     std::cout << "Filtering pgn files "
               << (options.matchBookInverted ? "not " : "")
               << "matching the book name " << options.match_book << std::endl;
     std::regex regex(options.match_book);
-    filter_files_book(files_pgn,
-                      get_metadata(files_pgn, options.allow_duplicates), regex,
-                      options.matchBookInverted);
+    filter_files_book(files_pgn, meta_map, regex, options.matchBookInverted);
+  }
+
+  if (options.only_sprt) {
+    std::cout << "Filtering pgn files that are not part of a SPRT test"
+              << std::endl;
+    filter_files_sprt(files_pgn, meta_map);
   }
 
   auto files_chunked = split_chunks(files_pgn, target_chunks);
@@ -276,7 +301,8 @@ void write_results(bool conclusive) {
   out.close();
 }
 
-/// @brief ./analyze [--path path] [-conclusive]
+/// @brief ./analyze [--dir path] [--concurrency n] [--matchBook book]
+/// [-allowDuplicates] [-onlySprt] [-conclusive] [-matchBookInverted]
 /// @param argc
 /// @param argv
 /// @return
@@ -285,8 +311,8 @@ int main(int argc, char const *argv[]) {
 
   CLIOptions options;
 
-  if (cmd.has("--path")) {
-    options.path = cmd.get("--path");
+  if (cmd.has("--dir")) {
+    options.dir = cmd.get("--dir");
   }
 
   if (cmd.has("-conclusive")) {
@@ -314,6 +340,10 @@ int main(int argc, char const *argv[]) {
 
   if (cmd.has("--allowDuplicates")) {
     options.allow_duplicates = true;
+  }
+
+  if (cmd.has("--onlySprt")) {
+    options.only_sprt = true;
   }
 
   process(options);
