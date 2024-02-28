@@ -1,5 +1,6 @@
 project_source_files = [
     'analyze.cpp',
+    'utils.cpp',
     '../external/gzip/gzstream.cpp',
 ]
 
