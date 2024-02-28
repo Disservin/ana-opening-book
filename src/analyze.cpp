@@ -28,7 +28,12 @@ struct Statistics {
 
   double draw_rate() const { return double(draws) / total(); }
 
-  // for sorting so that wins > draws > losses
+  // for sorting according to draw rate
+
+  bool operator>(const Statistics &other) const {
+    return draw_rate() > other.draw_rate();
+  }
+
   bool operator<(const Statistics &other) const {
     return draw_rate() < other.draw_rate();
   }
