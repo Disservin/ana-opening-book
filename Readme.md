@@ -1,7 +1,9 @@
-# Based on WDL_model
+# Analyze Opening Books from Fishtest
 
-Run
+For a first setup and compilation run
 
-meson setup build && meson compile -C build
+`meson setup build && meson compile -C build`
 
-./build/analysis
+The executable is located here
+
+` ./build/src/analysis`

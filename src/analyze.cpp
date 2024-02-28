@@ -4,17 +4,32 @@
 #include <string_view>
 #include <vector>
 
-#include "./external/gzip/gzstream.h"
-#include "chess.hpp"
-#include "external/parallel_hashmap/phmap.h"
-#include "external/threadpool.hpp"
+#include "../external/chess.hpp"
+#include "../external/gzip/gzstream.h"
+#include "../external/parallel_hashmap/phmap.h"
+#include "../external/threadpool.hpp"
+
+#include "./utils.hpp"
 
 using namespace chess;
+
+enum class Result { WIN = 'W', DRAW = 'D', LOSS = 'L', UNKNOWN = 'U' };
 
 struct Statistics {
   int wins = 0;
   int draws = 0;
   int losses = 0;
+
+  // for sorting so that wins > draws > losses
+  bool operator<(const Statistics &other) const {
+    if (wins != other.wins) {
+      return wins > other.wins;
+    } else if (draws != other.draws) {
+      return draws > other.draws;
+    } else {
+      return losses > other.losses;
+    }
+  }
 };
 
 using map_t = phmap::parallel_flat_hash_map<
@@ -23,8 +38,6 @@ using map_t = phmap::parallel_flat_hash_map<
 
 map_t occurance_map = {};
 std::atomic<std::size_t> total_chunks = 0;
-
-enum class Result { WIN = 'W', DRAW = 'D', LOSS = 'L', UNKNOWN = 'U' };
 
 class Analyzer : public pgn::Visitor {
 public:
@@ -44,59 +57,38 @@ public:
     }
 
     if (key == "FEN") {
-      occurance_map.lazy_emplace_l(
-          std::string(value),
-          [&](map_t::value_type &v) {
-            if (result == Result::WIN) {
-              v.second.wins++;
-            } else if (result == Result::DRAW) {
-              v.second.draws++;
-            } else if (result == Result::LOSS) {
-              v.second.losses++;
-            }
-          },
-          [&](const map_t::constructor &ctor) {
-            ctor(std::string(value),
-                 Statistics{result == Result::WIN, result == Result::DRAW,
-                            result == Result::LOSS});
-          });
+      if (result != Result::UNKNOWN) {
+        occurance_map.lazy_emplace_l(
+            std::string(value),
+            [&](map_t::value_type &v) {
+              if (result == Result::WIN) {
+                v.second.wins++;
+              } else if (result == Result::DRAW) {
+                v.second.draws++;
+              } else if (result == Result::LOSS) {
+                v.second.losses++;
+              }
+            },
+            [&](const map_t::constructor &ctor) {
+              ctor(std::string(value),
+                   Statistics{result == Result::WIN, result == Result::DRAW,
+                              result == Result::LOSS});
+            });
+      }
+
       skipPgn(true);
     }
   }
 
   void startMoves() override {}
 
-  void move(std::string_view move, std::string_view comment) override {}
+  void move(std::string_view, std::string_view) override {}
 
   void endPgn() override {}
 
 private:
   Result result = Result::UNKNOWN;
 };
-
-std::vector<std::string> get_files(const std::string &path,
-                                   bool recursive = false) {
-  std::vector<std::string> files;
-
-  for (const auto &entry : std::filesystem::directory_iterator(path)) {
-    if (std::filesystem::is_regular_file(entry)) {
-      std::string stem = entry.path().stem().string();
-      std::string extension = entry.path().extension().string();
-      if (extension == ".gz") {
-        if (stem.size() >= 4 && stem.substr(stem.size() - 4) == ".pgn") {
-          files.push_back(entry.path().string());
-        }
-      } else if (extension == ".pgn") {
-        files.push_back(entry.path().string());
-      }
-    } else if (recursive && std::filesystem::is_directory(entry)) {
-      auto subdir_files = get_files(entry.path().string(), true);
-      files.insert(files.end(), subdir_files.begin(), subdir_files.end());
-    }
-  }
-
-  return files;
-}
 
 void analyze_pgn(const std::vector<std::string> &files) {
   for (const auto &file : files) {
@@ -122,26 +114,6 @@ void analyze_pgn(const std::vector<std::string> &files) {
       pgn_stream.close();
     }
   }
-}
-
-[[nodiscard]] inline std::vector<std::vector<std::string>>
-split_chunks(const std::vector<std::string> &pgns, int target_chunks) {
-  const int chunks_size = (pgns.size() + target_chunks - 1) / target_chunks;
-
-  auto begin = pgns.begin();
-  auto end = pgns.end();
-
-  std::vector<std::vector<std::string>> chunks;
-
-  while (begin != end) {
-    auto next =
-        std::next(begin, std::min(chunks_size,
-                                  static_cast<int>(std::distance(begin, end))));
-    chunks.push_back(std::vector<std::string>(begin, next));
-    begin = next;
-  }
-
-  return chunks;
 }
 
 void process(const std::string &path) {
@@ -188,7 +160,14 @@ void write_results() {
 
   out << "FEN, Wins, Draws, Losses\n";
 
-  for (const auto &[fen, stats] : occurance_map) {
+  // Sort the map by the number of wins, draws, and losses
+  std::vector<std::pair<std::string, Statistics>> sorted_map(
+      occurance_map.begin(), occurance_map.end());
+
+  std::sort(sorted_map.begin(), sorted_map.end(),
+            [](const auto &a, const auto &b) { return a.second < b.second; });
+
+  for (const auto &[fen, stats] : sorted_map) {
     out << fen << ", " << stats.wins << ", " << stats.draws << ", "
         << stats.losses << "\n";
   }

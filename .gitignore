@@ -1,2 +1,8 @@
+# Meson
+.cache
+build
+
+# Misc
+
 results.csv
 pgns
