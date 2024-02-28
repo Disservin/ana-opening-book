@@ -1,4 +1,4 @@
-project('analysis', 'cpp', default_options: ['warning_level=3, cpp_std=c++17'])
+project('analysis', 'cpp', default_options: ['warning_level=3', 'cpp_std=c++17'])
 
 project_source_files = [
     'analyze.cpp',
