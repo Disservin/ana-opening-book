@@ -9,6 +9,7 @@
 #include "../external/parallel_hashmap/phmap.h"
 #include "../external/threadpool.hpp"
 
+#include "./options.hpp"
 #include "./utils.hpp"
 
 using namespace chess;
@@ -16,9 +17,9 @@ using namespace chess;
 enum class Result { WIN = 'W', DRAW = 'D', LOSS = 'L', UNKNOWN = 'U' };
 
 struct Statistics {
-  int wins = 0;
-  int draws = 0;
-  int losses = 0;
+  size_t wins = 0;
+  size_t draws = 0;
+  size_t losses = 0;
 
   // for sorting so that wins > draws > losses
   bool operator<(const Statistics &other) const {
@@ -30,6 +31,8 @@ struct Statistics {
       return losses > other.losses;
     }
   }
+
+  size_t total() const { return wins + draws + losses; }
 };
 
 using map_t = phmap::parallel_flat_hash_map<
@@ -155,7 +158,7 @@ void process(const std::string &path) {
   pool.wait();
 }
 
-void write_results() {
+void write_results(bool conclusive) {
   std::ofstream out("results.csv");
 
   out << "FEN, Wins, Draws, Losses\n";
@@ -168,6 +171,21 @@ void write_results() {
             [](const auto &a, const auto &b) { return a.second < b.second; });
 
   for (const auto &[fen, stats] : sorted_map) {
+    // when we have conclusive results, we only want to print the FENs that
+    // have a clear result, i.e. only wins, only draws, or only losses
+    if (conclusive)
+
+    {
+      if ((stats.wins > 0 && stats.total() == stats.wins) ||
+          (stats.draws > 0 && stats.total() == stats.draws) ||
+          (stats.losses > 0 && stats.total() == stats.losses)) {
+        out << fen << ", " << stats.wins << ", " << stats.draws << ", "
+            << stats.losses << "\n";
+      }
+
+      continue;
+    }
+
     out << fen << ", " << stats.wins << ", " << stats.draws << ", "
         << stats.losses << "\n";
   }
@@ -175,17 +193,26 @@ void write_results() {
   out.close();
 }
 
+/// @brief ./analyze [--path path] [-conclusive]
+/// @param argc
+/// @param argv
+/// @return
 int main(int argc, char const *argv[]) {
+  CommandLine cmd(argc, argv);
 
-  std::string path = "./pgns";
+  CLIOptions options;
 
-  if (argc > 1) {
-    path = argv[1];
+  if (cmd.has("--path")) {
+    options.path = cmd.get("--path");
   }
 
-  process(path);
+  if (cmd.has("-conclusive")) {
+    options.conclusive = true;
+  }
 
-  write_results();
+  process(options.path);
+
+  write_results(options.conclusive);
 
   return 0;
 }

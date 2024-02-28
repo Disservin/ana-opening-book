@@ -47,3 +47,27 @@ split_chunks(const std::vector<std::string> &pgns, int target_chunks) {
 
   return chunks;
 }
+
+class CommandLine {
+public:
+  CommandLine(int argc, char const *argv[]) {
+    for (int i = 1; i < argc; i++) {
+      args.push_back(argv[i]);
+    }
+  }
+
+  [[nodiscard]] inline std::string get(const std::string &flag) const {
+    auto it = std::find(args.begin(), args.end(), flag);
+    if (it != args.end() && ++it != args.end()) {
+      return *it;
+    }
+    return "";
+  }
+
+  [[nodiscard]] inline bool has(const std::string &flag) const {
+    return std::find(args.begin(), args.end(), flag) != args.end();
+  }
+
+private:
+  std::vector<std::string> args;
+};

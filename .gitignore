@@ -1,6 +1,7 @@
 # Meson
 .cache
 build
+builddir
 
 # Misc
 
