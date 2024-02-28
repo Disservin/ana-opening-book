@@ -1,6 +1,9 @@
 #include <iostream>
+#include <regex>
+#include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "../external/chess.hpp"
@@ -9,9 +12,12 @@
 #include "../external/threadpool.hpp"
 
 #include "./options.hpp"
+#include "./test.hpp"
 #include "./utils.hpp"
 
 using namespace chess;
+namespace fs = std::filesystem;
+using json = nlohmann::json;
 
 enum class Result { WIN = 'W', DRAW = 'D', LOSS = 'L', UNKNOWN = 'U' };
 
@@ -20,15 +26,11 @@ struct Statistics {
   size_t draws = 0;
   size_t losses = 0;
 
+  double draw_rate() const { return double(draws) / total(); }
+
   // for sorting so that wins > draws > losses
   bool operator<(const Statistics &other) const {
-    if (wins != other.wins) {
-      return wins > other.wins;
-    } else if (draws != other.draws) {
-      return draws > other.draws;
-    } else {
-      return losses > other.losses;
-    }
+    return draw_rate() < other.draw_rate();
   }
 
   size_t total() const { return wins + draws + losses; }
@@ -37,12 +39,14 @@ struct Statistics {
 using map_t = phmap::parallel_flat_hash_map<
     std::string, Statistics, std::hash<std::string>, std::equal_to<std::string>,
     std::allocator<std::pair<const std::string, Statistics>>, 8, std::mutex>;
+using map_meta = std::unordered_map<std::string, TestMetaData>;
 
 map_t occurance_map = {};
 std::atomic<std::size_t> total_chunks = 0;
 
 class Analyzer : public pgn::Visitor {
 public:
+  Analyzer(const CLIOptions &options) : options(options) {}
   virtual ~Analyzer(){};
 
   void startPgn() override { result = Result::UNKNOWN; }
@@ -90,12 +94,83 @@ public:
 
 private:
   Result result = Result::UNKNOWN;
+  const CLIOptions &options;
 };
 
-void analyze_pgn(const std::vector<std::string> &files) {
+[[nodiscard]] map_meta get_metadata(const std::vector<std::string> &file_list,
+                                    bool allow_duplicates) {
+  map_meta meta_map;
+  std::unordered_map<std::string, std::string>
+      test_map; // map to check for duplicate tests
+  std::set<std::string> test_warned;
+  for (const auto &pathname : file_list) {
+    fs::path path(pathname);
+    std::string directory = path.parent_path().string();
+    std::string filename = path.filename().string();
+    std::string test_id = filename.substr(0, filename.find_last_of('-'));
+    std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
+
+    if (test_map.find(test_id) == test_map.end()) {
+      test_map[test_id] = test_filename;
+    } else if (test_map[test_id] != test_filename) {
+      if (test_warned.find(test_filename) == test_warned.end()) {
+        std::cout << (allow_duplicates ? "Warning" : "Error")
+                  << ": Detected a duplicate of test " << test_id
+                  << " in directory " << directory << std::endl;
+        test_warned.insert(test_filename);
+
+        if (!allow_duplicates) {
+          std::cout << "Use --allowDuplicates to continue nonetheless."
+                    << std::endl;
+          std::exit(1);
+        }
+      }
+    }
+
+    // load the JSON data from disk, only once for each test
+    if (meta_map.find(test_filename) == meta_map.end()) {
+      std::ifstream json_file(test_filename + ".json");
+
+      if (!json_file.is_open())
+        continue;
+
+      json metadata = json::parse(json_file);
+
+      meta_map[test_filename] = metadata.get<TestMetaData>();
+    }
+  }
+  return meta_map;
+}
+
+void filter_files_book(std::vector<std::string> &file_list,
+                       const map_meta &meta_map, const std::regex &regex_book,
+                       bool invert) {
+  const auto pred = [&regex_book, invert,
+                     &meta_map](const std::string &pathname) {
+    std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
+
+    // check if metadata and "book" entry exist
+    if (meta_map.find(test_filename) != meta_map.end() &&
+        meta_map.at(test_filename).book.has_value()) {
+      bool match =
+          std::regex_match(meta_map.at(test_filename).book.value(), regex_book);
+
+      return invert ? match : !match;
+    }
+
+    // missing metadata or "book" entry can never match
+    return true;
+  };
+
+  file_list.erase(std::remove_if(file_list.begin(), file_list.end(), pred),
+                  file_list.end());
+}
+
+void analyze_pgn(const std::vector<std::string> &files,
+                 const CLIOptions &options) {
   for (const auto &file : files) {
     const auto pgn_iterator = [&](std::istream &iss) {
-      auto vis = std::make_unique<Analyzer>();
+      auto vis = std::make_unique<Analyzer>(options);
 
       pgn::StreamParser parser(iss);
 
@@ -118,11 +193,20 @@ void analyze_pgn(const std::vector<std::string> &files) {
   }
 }
 
-void process(const std::string &path) {
-  int concurrency = std::max(1, int(std::thread::hardware_concurrency()));
-  int target_chunks = 4 * concurrency;
+void process(const CLIOptions &options) {
+  int target_chunks = 4 * options.concurrency;
 
-  const auto files_pgn = get_files(path, true);
+  auto files_pgn = get_files(options.path, true);
+
+  if (!options.match_book.empty()) {
+    std::cout << "Filtering pgn files "
+              << (options.matchBookInverted ? "not " : "")
+              << "matching the book name " << options.match_book << std::endl;
+    std::regex regex(options.match_book);
+    filter_files_book(files_pgn,
+                      get_metadata(files_pgn, options.allow_duplicates), regex,
+                      options.matchBookInverted);
+  }
 
   auto files_chunked = split_chunks(files_pgn, target_chunks);
 
@@ -130,15 +214,15 @@ void process(const std::string &path) {
   std::mutex progress_mutex;
 
   // Create a thread pool
-  ThreadPool pool(concurrency);
+  ThreadPool pool(options.concurrency);
 
   // Print progress
   std::cout << "\rProgress: " << total_chunks << "/" << files_chunked.size()
             << std::flush;
 
   for (const auto &files : files_chunked) {
-    pool.enqueue([&files, &files_chunked, &progress_mutex]() {
-      analyze_pgn(files);
+    pool.enqueue([&files, &files_chunked, &progress_mutex, &options]() {
+      analyze_pgn(files, options);
 
       total_chunks++;
 
@@ -209,7 +293,30 @@ int main(int argc, char const *argv[]) {
     options.conclusive = true;
   }
 
-  process(options.path);
+  if (cmd.has("--concurrency")) {
+    options.concurrency = std::stoi(cmd.get("--concurrency"));
+  } else {
+    options.concurrency = std::max(1, int(std::thread::hardware_concurrency()));
+  }
+
+  if (cmd.has("matchBook")) {
+    options.match_book = cmd.get("matchBook");
+
+    if (options.match_book.empty()) {
+      std::cerr << "Error: --matchBook cannot be empty" << std::endl;
+      return 1;
+    }
+
+    if (cmd.has("--matchBookInverted")) {
+      options.matchBookInverted = true;
+    }
+  }
+
+  if (cmd.has("--allowDuplicates")) {
+    options.allow_duplicates = true;
+  }
+
+  process(options);
 
   write_results(options.conclusive);
 
