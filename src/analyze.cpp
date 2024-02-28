@@ -301,7 +301,7 @@ void write_results(bool conclusive) {
   out.close();
 }
 
-/// @brief ./analyze [--dir path] [--concurrency n] [--matchBook book]
+/// @brief ./analysis [--dir path] [--concurrency n] [--matchBook book]
 /// [-allowDuplicates] [-onlySprt] [-conclusive] [-matchBookInverted]
 /// @param argc
 /// @param argv
