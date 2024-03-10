@@ -401,15 +401,15 @@ int main(int argc, char const *argv[]) {
         options.concurrency = std::max(1, int(std::thread::hardware_concurrency()));
     }
 
-    if (cmd.has("matchBook")) {
-        options.match_book = cmd.get("matchBook");
+    if (cmd.has("--matchBook")) {
+        options.match_book = cmd.get("--matchBook");
 
         if (options.match_book.empty()) {
             std::cerr << "Error: --matchBook cannot be empty" << std::endl;
             return 1;
         }
 
-        if (cmd.has("--matchBookInverted")) {
+        if (cmd.has("-matchBookInverted")) {
             options.matchBookInverted = true;
         }
     }
