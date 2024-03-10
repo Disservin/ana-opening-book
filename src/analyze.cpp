@@ -378,7 +378,7 @@ void write_results(bool conclusive) {
 }
 
 /// @brief ./analysis [--dir path] [--concurrency n] [--matchBook book]
-/// [-allowDuplicates] [-onlySprt] [-conclusive] [-matchBookInverted]
+/// [-allowDuplicates] [-onlySprt] [-conclusive] [-matchBookInverted] [--fixFENsource file]
 /// @param argc
 /// @param argv
 /// @return
