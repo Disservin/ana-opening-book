@@ -107,6 +107,32 @@ class Analyzer : public pgn::Visitor {
 
     void endPgn() override {}
 
+    std::string fixFen(std::string_view fen) {
+        std::regex p("^(.+) (.+) 0 1$");
+        std::smatch match;
+        std::string value_str(fen);
+
+        // revert changes by cutechess-cli to move counters, but trust it on ep square
+        if (!options.fixfens.empty() && std::regex_search(value_str, match, p) &&
+            match.size() > 2) {
+            std::string fen = match[1];
+            auto it         = options.fixfens.find(fen);
+
+            if (it == options.fixfens.end()) {
+                std::cerr << "Could not find FEN " << fen << " in fixFENsource." << std::endl;
+                std::exit(1);
+            }
+
+            const auto &fix = it->second;
+            std::string ep  = match[2];  // trust cutechess-cli on this one
+            std::string fixed_value =
+                fen + " " + ep + " " + std::to_string(fix.first) + " " + std::to_string(fix.second);
+            return fixed_value;
+        }
+
+        return value_str;
+    }
+
    private:
     Result result = Result::UNKNOWN;
     const CLIOptions &options;
@@ -215,6 +241,48 @@ void analyze_pgn(const std::vector<std::string> &files, const CLIOptions &option
             pgn_stream.close();
         }
     }
+}
+
+[[nodiscard]] map_fens get_fixfen(std::string file) {
+    map_fens fixfen_map;
+    if (file.empty()) {
+        return fixfen_map;
+    }
+
+    const auto fen_iterator = [&](std::istream &iss) {
+        std::string line;
+        while (std::getline(iss, line)) {
+            std::istringstream iss(line);
+            std::string f1, f2, f3, ep;
+            int halfmove, fullmove = 0;
+
+            iss >> f1 >> f2 >> f3 >> ep >> halfmove >> fullmove;
+
+            if (!fullmove) continue;
+
+            auto key         = f1 + ' ' + f2 + ' ' + f3;
+            auto fixfen_data = std::pair<int, int>(halfmove, fullmove);
+
+            if (fixfen_map.find(key) != fixfen_map.end()) {
+                // for duplicate FENs, prefer the one with lower full move counter
+                if (fullmove < fixfen_map[key].second) {
+                    fixfen_map[key] = fixfen_data;
+                }
+            } else {
+                fixfen_map[key] = fixfen_data;
+            }
+        }
+    };
+
+    if (file.size() >= 3 && file.substr(file.size() - 3) == ".gz") {
+        igzstream input(file.c_str());
+        fen_iterator(input);
+    } else {
+        std::ifstream input(file);
+        fen_iterator(input);
+    }
+
+    return fixfen_map;
 }
 
 void process(const CLIOptions &options) {
@@ -352,6 +420,10 @@ int main(int argc, char const *argv[]) {
 
     if (cmd.has("--onlySprt")) {
         options.only_sprt = true;
+    }
+
+    if (cmd.has("--fixFENsource")) {
+        options.fixfens = get_fixfen(cmd.get("--fixFENsource"));
     }
 
     const auto t0 = std::chrono::high_resolution_clock::now();
