@@ -1,9 +1,6 @@
-import argparse, ast
+import argparse
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from collections import Counter
-from datetime import datetime
-from matplotlib.ticker import MaxNLocator
 
 
 def format_large_number(number):
@@ -19,7 +16,7 @@ class csvdata:
     def __init__(self, prefix, drawRateMin, drawRateMax, outFile):
         self.prefix = prefix
         self.games = Counter()  # games played
-        self.depth = Counter()  # depths (in game ply)
+        self.depth = Counter()  # depths (in plies)
         self.drawrate = Counter()  # draw rates (in percent)
         self.total_count = self.white_count = 0
         fens = set()
