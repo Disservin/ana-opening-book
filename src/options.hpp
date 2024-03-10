@@ -12,5 +12,5 @@ struct CLIOptions {
     bool conclusive        = false;
     bool only_sprt         = false;
     bool allow_duplicates  = false;
-    bool matchBookInverted = true;
+    bool matchBookInverted = false;
 };
