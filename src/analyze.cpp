@@ -76,10 +76,10 @@ class Analyzer : public pgn::Visitor {
         }
 
         if (key == "FEN") {
-            value = fixFen(value);
+            std::string fixed_value = fixFen(value);
             if (result != Result::UNKNOWN) {
                 occurance_map.lazy_emplace_l(
-                    std::string(value),
+                    fixed_value,
                     [&](map_t::value_type &v) {
                         if (result == Result::WIN) {
                             v.second.wins++;
@@ -90,7 +90,7 @@ class Analyzer : public pgn::Visitor {
                         }
                     },
                     [&](const map_t::constructor &ctor) {
-                        ctor(std::string(value),
+                        ctor(fixed_value,
                              Statistics{result == Result::WIN, result == Result::DRAW,
                                         result == Result::LOSS});
                     });
