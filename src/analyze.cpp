@@ -76,6 +76,7 @@ class Analyzer : public pgn::Visitor {
         }
 
         if (key == "FEN") {
+            value = fixFen(value);
             if (result != Result::UNKNOWN) {
                 occurance_map.lazy_emplace_l(
                     std::string(value),
