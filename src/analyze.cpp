@@ -78,14 +78,9 @@ class Analyzer : public pgn::Visitor {
             } else if (value == "1/2-1/2") {
                 result = Result::DRAW;
             }
-        }
-
-        if (key == "FEN") {
-            fen = fixFen(value);
-            skipPgn(true);
-        }
-
-        if (key == "Termination") {
+        } else if (key == "FEN") {
+            fen = value;
+        } else if (key == "Termination") {
             if (value == "time forfeit" || value == "abandoned" || value == "stalled connection" ||
                 value == "illegal move" || value == "unterminated") {
                 valid_game = false;
@@ -95,10 +90,14 @@ class Analyzer : public pgn::Visitor {
 
     // last fen was parsed
     void startMoves() override {
-        if (result == Result::UNKNOWN || !valid_game) return;
+        skipPgn(true);
+
+        if (result == Result::UNKNOWN || !valid_game || fen.empty()) return;
+
+        const auto fixed_fen = fixFen(fen);
 
         occurance_map.lazy_emplace_l(
-            fen,
+            fixed_fen,
             [&](map_t::value_type &v) {
                 if (result == Result::WIN) {
                     v.second.wins++;
@@ -109,8 +108,8 @@ class Analyzer : public pgn::Visitor {
                 }
             },
             [&](const map_t::constructor &ctor) {
-                ctor(fen, Statistics{result == Result::WIN, result == Result::DRAW,
-                                     result == Result::LOSS});
+                ctor(fixed_fen, Statistics{result == Result::WIN, result == Result::DRAW,
+                                           result == Result::LOSS});
             });
 
         total_games++;
