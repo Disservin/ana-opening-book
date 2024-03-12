@@ -64,8 +64,8 @@ class Analyzer : public pgn::Visitor {
 
     // reset
     void startPgn() override {
-        result = Result::UNKNOWN;
-        fen.clear();
+        result     = Result::UNKNOWN;
+        fen        = chess::constants::STARTPOS;
         valid_game = true;
     }
 
@@ -92,7 +92,7 @@ class Analyzer : public pgn::Visitor {
     void startMoves() override {
         skipPgn(true);
 
-        if (result == Result::UNKNOWN || !valid_game || fen.empty()) return;
+        if (result == Result::UNKNOWN || !valid_game) return;
 
         const auto fixed_fen = fixFen(fen);
 
