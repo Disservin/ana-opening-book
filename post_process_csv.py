@@ -13,11 +13,20 @@ def format_large_number(number):
     return f"{number:.0f}{suffixes[-1]}"
 
 
+def verbose_savefig(filename):
+    plt.savefig(filename, dpi=300)
+    print(f"Saved graphics in {filename}.")
+
+
 class csvdata:
-    def __init__(self, prefix):
-        self.prefix = prefix
+    def __init__(self, filename=None):
         self.fenwdl = {}  # dict with mapping fenkey -> [fen, W, D, L]
-        with open(prefix + ".csv") as f:
+        self.book = None
+        self.prefix = None
+        if not filename:
+            return
+        self.prefix, _, _ = filename.rpartition(".")
+        with open(filename) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("FEN"):
@@ -26,12 +35,33 @@ class csvdata:
                 assert len(fields) >= 4, f"Missing WDL data in {line}"
                 fenfields = fields[0].split()
                 assert len(fenfields) >= 4, f"Incomplete FEN {fields[0]}"
-                fenkey = " ".join(fenfields[:4])  # ignore move counters
-                fenfull = " ".join(fenfields[:6])
-                if fenkey not in self.fenwdl:
-                    self.fenwdl[fenkey] = [fenfull, 0, 0, 0]
+                key = " ".join(fenfields[:4])  # ignore move counters
+                fen = " ".join(fenfields[:6])
+                if key not in self.fenwdl:
+                    self.fenwdl[key] = [fen, 0, 0, 0]
                 for i in [1, 2, 3]:
-                    self.fenwdl[fenkey][i] += int(fields[i])
+                    self.fenwdl[key][i] += int(fields[i])
+
+    def load_book(self, bookFile):
+        self.book = []
+        with open(bookFile) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                fenfields = line.split()
+                assert len(fenfields) >= 4, f"Incomplete FEN {line}"
+                fen = " ".join(fenfields[:6])
+                self.book.append(fen)
+
+    def add_unseen_exits(self):
+        count = 0
+        for fen in self.book:
+            key = " ".join(fen.split()[:4])
+            if key not in self.fenwdl:
+                self.fenwdl[key] = [fen, 0, 0, 0]
+                count += 1
+        return count
 
     def calculate_stats(self):
         self.games = Counter()  # frequencies of games played per book exit
@@ -59,44 +89,48 @@ class csvdata:
             self.total_count += G
             self.white_count += G * (1 if fenfields[1] == "w" else 0)
 
-    def filter_exits(self, drawRateMin, drawRateMax, drawRateGames, outFile):
-        count = 0
-        epdFile = outFile.replace(".csv", ".epd")
-        with open(outFile, "w") as f, open(epdFile, "w") as fepd:
+    def save_csv(self, filename):
+        with open(filename, "w") as f:
             f.write("FEN, Wins, Draws, Losses\n")
             for key in self.fenwdl:
                 W, D, L = self.fenwdl[key][1], self.fenwdl[key][2], self.fenwdl[key][3]
-                G = W + D + L
-                dr = int(D / G * 100) if G else 0
-                if (
-                    G < drawRateGames
-                    or (drawRateMin is None or dr >= drawRateMin)
-                    and (drawRateMax is None or dr <= drawRateMax)
-                ):
-                    f.write(f"{self.fenwdl[key][0]}, {W}, {D}, {L}\n")
-                    fepd.write(f"{self.fenwdl[key][0]}\n")
-                    count += 1
-            print(
-                f"Saved {count} filtered positions and stats to {epdFile} and {outFile}."
-            )
+                f.write(f"{self.fenwdl[key][0]}, {W}, {D}, {L}\n")
 
-    def create_games_per_exit_graph(self, bookFile):
+    def save_epd(self, filename):
+        with open(filename, "w") as f:
+            for key in self.fenwdl:
+                f.write(f"{self.fenwdl[key][0]}\n")
+
+    def filter_exits(self, drawRateMin, drawRateMax, drawRateGames, outFile):
+        filtered = csvdata()
+        for key in self.fenwdl:
+            W, D, L = self.fenwdl[key][1], self.fenwdl[key][2], self.fenwdl[key][3]
+            G = W + D + L
+            dr = int(D / G * 100) if G else 0
+            if G < drawRateGames or (
+                (drawRateMin is None or dr >= drawRateMin)
+                and (drawRateMax is None or dr <= drawRateMax)
+            ):
+                filtered.fenwdl[key] = self.fenwdl[key].copy()
+        filtered.save_csv(outFile)
+        epdFile, _, _ = outFile.rpartition(".csv")
+        epdFile += ".epd"
+        filtered.save_epd(epdFile)
+        print(
+            f"Saved {len(filtered.fenwdl)} filtered positions and stats to {epdFile} and {outFile}."
+        )
+
+    def create_games_per_exit_graph(self):
         var = 0
         games = []
-        with open(bookFile) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                fenfields = line.split()
-                assert len(fenfields) >= 4, f"Incomplete FEN {line}"
-                key = " ".join(fenfields[:4])  # ignore move counters
-                G = 0
-                if key in self.fenwdl:
-                    for i in [1, 2, 3]:
-                        G += self.fenwdl[key][i]
-                games.append(G)
-                var += G * G
+        for fen in self.book:
+            key = " ".join(fen.split()[:4])  # ignore move counters
+            G = 0
+            if key in self.fenwdl:
+                for i in [1, 2, 3]:
+                    G += self.fenwdl[key][i]
+            games.append(G)
+            var += G * G
         fig, ax = plt.subplots()
         mi, ma = min(games), max(games)
         fig.suptitle(f"Games played per book exit. (min: {mi}, max: {ma})")
@@ -123,7 +157,7 @@ class csvdata:
         ax.set_xlabel("book exit (ordered as in .epd file)")
         ax.set_ylabel("# of games played")
         ax.legend(loc="upper left", fontsize=5, ncol=2)
-        plt.savefig("games_per_exit.png", dpi=300)
+        verbose_savefig("games_per_exit.png")
 
 
 def create_distribution_graph(csvs, plot="drawrate"):
@@ -168,12 +202,12 @@ def create_distribution_graph(csvs, plot="drawrate"):
         fig.suptitle("Depths (in plies) of the book exits.")
     elif plot == "games":
         fig.suptitle("Frequencies of games played per book exit.")
-    plt.savefig(f"fencsv_{plot}.png", dpi=300)
+    verbose_savefig(f"fencsv_{plot}.png")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Plot/filter data stored in results.csv created by ana-opening-book.",
+        description="A script to possibly filter and/or visualize CSV data produced by build/src/analysis. Can either be run for a single .csv to filter and plot, or for two .csv files to produce comparison plots.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -184,13 +218,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--drawRateMin",
-        type=float,
-        help="Lower limit for draw rate filter if just one file is given.",
+        type=int,
+        help="Lower limit for draw rate (in %) filter if just one file is given.",
     )
     parser.add_argument(
         "--drawRateMax",
-        type=float,
-        help="Upper limit for draw rate filter if just one file is given.",
+        type=int,
+        help="Upper limit for draw rate (in %) filter if just one file is given.",
     )
     parser.add_argument(
         "--drawRateGames",
@@ -200,16 +234,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--outFile",
-        help="Filename for the filtered data.",
+        help="Filename for the filtered CSV data. FENs will be stored in matching .epd file.",
         default="filtered.csv",
     )
     parser.add_argument(
         "--bookFile",
-        help="Filename for the (order of the) book exits, for extra plotting.",
+        help="Filename with book exits. Allows padding of CSV data, as well as index-dependent plot of frequencies.",
     )
     args = parser.parse_args()
     if len(args.filenames) > 2:
-        print("No more than two csv files allowed.")
+        print("No more than two .csv files allowed.")
         exit(1)
 
     if len(args.filenames) > 1 and (
@@ -222,15 +256,24 @@ if __name__ == "__main__":
 
     csvs = []
     for f in args.filenames:
-        prefix, _, _ = f.partition(".")
-        csv = csvdata(prefix)
+        csv = csvdata(f)
+        if args.bookFile:
+            csv.load_book(args.bookFile)
+            if csv.add_unseen_exits():
+                csv.prefix, _, _ = args.bookFile.rpartition(".epd")
+                csvFile = csv.prefix + ".csv"
+                assert (
+                    csvFile not in args.filenames
+                ), f"Clash with input filename {csvFile}."
+                csv.save_csv(csvFile)
+                print(f"Saved the padded CSV data to {csvFile}.")
         csv.calculate_stats()
+        if args.bookFile:
+            csv.create_games_per_exit_graph()
         if args.drawRateMin is not None or args.drawRateMax is not None:
             csv.filter_exits(
                 args.drawRateMin, args.drawRateMax, args.drawRateGames, args.outFile
             )
-        if args.bookFile:
-            csv.create_games_per_exit_graph(args.bookFile)
         csvs.append(csv)
 
     for plot in ["drawrate", "depth", "games"]:
