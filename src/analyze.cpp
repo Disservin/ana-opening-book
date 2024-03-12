@@ -62,7 +62,12 @@ class Analyzer : public pgn::Visitor {
     Analyzer(const CLIOptions &options) : options(options) {}
     virtual ~Analyzer(){};
 
-    void startPgn() override { result = Result::UNKNOWN; }
+    // reset
+    void startPgn() override {
+        result = Result::UNKNOWN;
+        fen.clear();
+        valid_game = true;
+    }
 
     void header(std::string_view key, std::string_view value) override {
         if (key == "Result") {
@@ -76,38 +81,46 @@ class Analyzer : public pgn::Visitor {
         }
 
         if (key == "FEN") {
-            std::string fixed_value = fixFen(value);
-            if (result != Result::UNKNOWN) {
-                occurance_map.lazy_emplace_l(
-                    fixed_value,
-                    [&](map_t::value_type &v) {
-                        if (result == Result::WIN) {
-                            v.second.wins++;
-                        } else if (result == Result::DRAW) {
-                            v.second.draws++;
-                        } else if (result == Result::LOSS) {
-                            v.second.losses++;
-                        }
-                    },
-                    [&](const map_t::constructor &ctor) {
-                        ctor(fixed_value,
-                             Statistics{result == Result::WIN, result == Result::DRAW,
-                                        result == Result::LOSS});
-                    });
-
-                total_games++;
-            }
-
+            fen = fixFen(value);
             skipPgn(true);
+        }
+
+        if (key == "Termination") {
+            if (value == "time forfeit" || value == "abandoned" || value == "stalled connection" ||
+                value == "illegal move" || value == "unterminated") {
+                valid_game = false;
+            }
         }
     }
 
-    void startMoves() override {}
+    // last fen was parsed
+    void startMoves() override {
+        if (result == Result::UNKNOWN || !valid_game) return;
+
+        occurance_map.lazy_emplace_l(
+            fen,
+            [&](map_t::value_type &v) {
+                if (result == Result::WIN) {
+                    v.second.wins++;
+                } else if (result == Result::DRAW) {
+                    v.second.draws++;
+                } else if (result == Result::LOSS) {
+                    v.second.losses++;
+                }
+            },
+            [&](const map_t::constructor &ctor) {
+                ctor(fen, Statistics{result == Result::WIN, result == Result::DRAW,
+                                     result == Result::LOSS});
+            });
+
+        total_games++;
+    }
 
     void move(std::string_view, std::string_view) override {}
 
     void endPgn() override {}
 
+   private:
     std::string fixFen(std::string_view fen_view) {
         std::regex p("^(.+) 0 1$");
         std::smatch match;
@@ -132,9 +145,9 @@ class Analyzer : public pgn::Visitor {
 
         return value_str;
     }
-
-   private:
     Result result = Result::UNKNOWN;
+    std::string fen;
+    bool valid_game = true;
     const CLIOptions &options;
 };
 
