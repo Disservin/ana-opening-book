@@ -108,14 +108,14 @@ class Analyzer : public pgn::Visitor {
 
     void endPgn() override {}
 
-    std::string fixFen(std::string_view fen) {
-        std::regex p("^(.+) (.+) 0 1$");
+    std::string fixFen(std::string_view fen_view) {
+        std::regex p("^(.+) 0 1$");
         std::smatch match;
-        std::string value_str(fen);
+        std::string value_str(fen_view);
 
-        // revert changes by cutechess-cli to move counters, but trust it on ep square
+        // revert changes by cutechess-cli to move counters
         if (!options.fixfens.empty() && std::regex_search(value_str, match, p) &&
-            match.size() > 2) {
+            match.size() > 1) {
             std::string fen = match[1];
             auto it         = options.fixfens.find(fen);
 
@@ -125,9 +125,8 @@ class Analyzer : public pgn::Visitor {
             }
 
             const auto &fix = it->second;
-            std::string ep  = match[2];  // trust cutechess-cli on this one
             std::string fixed_value =
-                fen + " " + ep + " " + std::to_string(fix.first) + " " + std::to_string(fix.second);
+                fen + " " + std::to_string(fix.first) + " " + std::to_string(fix.second);
             return fixed_value;
         }
 
@@ -261,7 +260,7 @@ void analyze_pgn(const std::vector<std::string> &files, const CLIOptions &option
 
             if (!fullmove) continue;
 
-            auto key         = f1 + ' ' + f2 + ' ' + f3;
+            auto key         = f1 + ' ' + f2 + ' ' + f3 + ' ' + ep;
             auto fixfen_data = std::pair<int, int>(halfmove, fullmove);
 
             if (fixfen_map.find(key) != fixfen_map.end()) {
