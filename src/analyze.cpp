@@ -420,7 +420,7 @@ int main(int argc, char const *argv[]) {
 
     if (cmd.has("--SPRTonly")) {
         options.only_sprt = true;
-        std::cout << "Filtering pgn files that are not part of a SPRT test" << std::endl;
+        std::cout << "Only analyse games that are part of a SPRT test" << std::endl;
     }
 
     if (cmd.has("--fixFENsource")) {
