@@ -305,14 +305,11 @@ void process(const CLIOptions &options) {
     const auto meta_map = get_metadata(files_pgn, options.allow_duplicates);
 
     if (!options.match_book.empty()) {
-        std::cout << "Filtering pgn files " << (options.matchBookInverted ? "not " : "")
-                  << "matching the book name " << options.match_book << std::endl;
         std::regex regex(options.match_book);
         filter_files_book(files_pgn, meta_map, regex, options.matchBookInverted);
     }
 
     if (options.only_sprt) {
-        std::cout << "Filtering pgn files that are not part of a SPRT test" << std::endl;
         filter_files_sprt(files_pgn, meta_map);
     }
 
@@ -348,7 +345,7 @@ void process(const CLIOptions &options) {
     pool.wait();
 }
 
-void write_results(bool conclusive) {
+void write_results() {
     std::ofstream out("results.csv");
 
     out << "FEN, Wins, Draws, Losses\n";
@@ -365,16 +362,6 @@ void write_results(bool conclusive) {
     std::size_t losses = 0;
 
     for (const auto &[fen, stats] : sorted_map) {
-        // when we have conclusive results, we only want to print the FENs that
-        // have a clear result, i.e. only wins, only draws, or only losses
-        if (conclusive) {
-            if (!((stats.wins > 0 && stats.total() == stats.wins) ||
-                  (stats.draws > 0 && stats.total() == stats.draws) ||
-                  (stats.losses > 0 && stats.total() == stats.losses))) {
-                continue;
-            }
-        }
-
         wins += stats.wins;
         draws += stats.draws;
         losses += stats.losses;
@@ -390,7 +377,7 @@ void write_results(bool conclusive) {
 }
 
 /// @brief ./analysis [--dir path] [--concurrency n] [--matchBook book]
-/// [-allowDuplicates] [-onlySprt] [-conclusive] [-matchBookInverted] [--fixFENsource file]
+/// [--allowDuplicates] [--SPRTonly] [--matchBookInvert] [--fixFENsource file]
 /// @param argc
 /// @param argv
 /// @return
@@ -401,10 +388,7 @@ int main(int argc, char const *argv[]) {
 
     if (cmd.has("--dir")) {
         options.dir = cmd.get("--dir");
-    }
-
-    if (cmd.has("-conclusive")) {
-        options.conclusive = true;
+        std::cout << "Looking (recursively) for pgn files in " << options.dir << std::endl;
     }
 
     if (cmd.has("--concurrency")) {
@@ -412,6 +396,7 @@ int main(int argc, char const *argv[]) {
     } else {
         options.concurrency = std::max(1, int(std::thread::hardware_concurrency()));
     }
+    std::cout << "Files will be processed with concurrency " << options.concurrency << std::endl;
 
     if (cmd.has("--matchBook")) {
         options.match_book = cmd.get("--matchBook");
@@ -421,21 +406,27 @@ int main(int argc, char const *argv[]) {
             return 1;
         }
 
-        if (cmd.has("-matchBookInverted")) {
+        if (cmd.has("--matchBookInvert")) {
             options.matchBookInverted = true;
         }
+        std::cout << "Filtering pgn files " << (options.matchBookInverted ? "not " : "")
+                  << "matching the book name " << options.match_book << std::endl;
     }
 
     if (cmd.has("--allowDuplicates")) {
         options.allow_duplicates = true;
+        std::cout << "Allow duplicate tests during the analysis." << std::endl;
     }
 
-    if (cmd.has("--onlySprt")) {
+    if (cmd.has("--SPRTonly")) {
         options.only_sprt = true;
+        std::cout << "Filtering pgn files that are not part of a SPRT test" << std::endl;
     }
 
     if (cmd.has("--fixFENsource")) {
-        options.fixfens = get_fixfen(cmd.get("--fixFENsource"));
+        auto file       = cmd.get("--fixFENsource");
+        options.fixfens = get_fixfen(file);
+        std::cout << "Read in move counters to possibly fix FENs from " << file << std::endl;
     }
 
     const auto t0 = std::chrono::high_resolution_clock::now();
@@ -446,7 +437,7 @@ int main(int argc, char const *argv[]) {
               << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() / 1000.0
               << "s" << std::endl;
 
-    write_results(options.conclusive);
+    write_results();
 
     return 0;
 }
