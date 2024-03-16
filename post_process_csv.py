@@ -96,6 +96,14 @@ class csvdata:
                 W, D, L = self.fenwdl[key][1], self.fenwdl[key][2], self.fenwdl[key][3]
                 f.write(f"{self.fenwdl[key][0]}, {W}, {D}, {L}\n")
 
+    def save_book_csv(self, filename):
+        with open(filename, "w") as f:
+            f.write("FEN, Wins, Draws, Losses\n")
+            for fen in self.book:
+                key = " ".join(fen.split()[:4])
+                W, D, L = self.fenwdl[key][1], self.fenwdl[key][2], self.fenwdl[key][3]
+                f.write(f"{self.fenwdl[key][0]}, {W}, {D}, {L}\n")
+
     def save_epd(self, filename):
         with open(filename, "w") as f:
             for key in self.fenwdl:
@@ -239,7 +247,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--bookFile",
-        help="Filename with book exits. Allows padding of CSV data, as well as index-dependent plot of frequencies.",
+        help="Filename with book exits. Allows saving of the book's CSV data, as well as index-dependent plot of frequencies.",
     )
     args = parser.parse_args()
     if len(args.filenames) > 2:
@@ -251,7 +259,9 @@ if __name__ == "__main__":
         or args.drawRateMax is not None
         or args.bookFile is not None
     ):
-        print("Draw rate limits are only allowed for a single input file.")
+        print(
+            "Draw rate limits and --bookFile are only allowed for a single input file."
+        )
         exit(1)
 
     csvs = []
@@ -259,14 +269,16 @@ if __name__ == "__main__":
         csv = csvdata(f)
         if args.bookFile:
             csv.load_book(args.bookFile)
-            if csv.add_unseen_exits():
-                csv.prefix, _, _ = args.bookFile.rpartition(".epd")
-                csvFile = csv.prefix + ".csv"
-                assert (
-                    csvFile not in args.filenames
-                ), f"Clash with input filename {csvFile}."
-                csv.save_csv(csvFile)
-                print(f"Saved the padded CSV data to {csvFile}.")
+            count = csv.add_unseen_exits()
+            if count:
+                print(f"Padded book's CSV data with {count} 0, 0, 0 entries.")
+            csv.prefix, _, _ = args.bookFile.rpartition(".epd")
+            csvFile = csv.prefix + ".csv"
+            assert (
+                csvFile not in args.filenames
+            ), f"Clash with input filename {csvFile}."
+            csv.save_book_csv(csvFile)
+            print(f"Saved the book's CSV data to {csvFile}.")
         csv.calculate_stats()
         if args.bookFile:
             csv.create_games_per_exit_graph()
