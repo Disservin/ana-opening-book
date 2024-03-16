@@ -295,12 +295,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--drawRateMin",
         type=int,
-        help="Lower limit for draw rate (in %) filter if just one file is given.",
+        help="Lower limit for draw rate (in %%) filter if just one file is given.",
     )
     parser.add_argument(
         "--drawRateMax",
         type=int,
-        help="Upper limit for draw rate (in %) filter if just one file is given.",
+        help="Upper limit for draw rate (in %%) filter if just one file is given.",
     )
     parser.add_argument(
         "--drawRateGames",
