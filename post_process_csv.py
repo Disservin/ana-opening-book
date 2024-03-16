@@ -1,7 +1,12 @@
-import argparse
+import argparse, gzip
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
+
+
+def open_file(filename):
+    open_func = gzip.open if filename.endswith(".gz") else open
+    return open_func(filename, "rt")
 
 
 def format_large_number(number):
@@ -25,8 +30,8 @@ class csvdata:
         self.prefix = None
         if not filename:
             return
-        self.prefix, _, _ = filename.rpartition(".")
-        with open(filename) as f:
+        self.prefix, _, _ = filename.rpartition(".csv")
+        with open_file(filename) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("FEN"):
@@ -44,7 +49,7 @@ class csvdata:
 
     def load_book(self, bookFile):
         self.book = []
-        with open(bookFile) as f:
+        with open_file(bookFile) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -167,6 +172,37 @@ class csvdata:
         ax.legend(loc="upper left", fontsize=5, ncol=2)
         verbose_savefig("games_per_exit.png")
 
+    def create_cdb_scatter_plot(self, cdb):
+        evals, drawrates, games = [], [], []
+        for key in self.fenwdl:
+            W, D, L = self.fenwdl[key][1], self.fenwdl[key][2], self.fenwdl[key][3]
+            G = W + D + L
+            if G == 0 or key not in cdb:
+                continue
+            score = cdb[key][0]
+            if score.lstrip("-").isnumeric():
+                e = int(score)
+            elif score.startswith("M"):
+                e = 30000 - int(score[1:])
+            elif score.startswith("-M"):
+                e = -30000 + int(score[2:])
+            else:
+                e = None
+            if e is not None:
+                evals.append(abs(e))
+                dr = D / G * 100
+                games.append(G)
+                drawrates.append(dr)
+
+        fig, ax = plt.subplots()
+        fig.suptitle(f"Draw rate vs (absolute) cdb eval.")
+        ax.set_title(f"Source: {self.prefix}.csv", fontsize=8)
+        alpha_fac = 10 * sum(games)**(-0.5)
+        ax.scatter(drawrates, evals, s=4, alpha=[alpha_fac * g for g in games])
+        ax.set_xlabel("draw rate (in %)")
+        ax.set_ylabel("(absolute) cdb eval (in cp)")
+        verbose_savefig("cdb_scatter.png")
+
 
 def create_distribution_graph(csvs, plot="drawrate"):
     color, edgecolor = ["red", "blue"], ["yellow", "black"]
@@ -213,6 +249,38 @@ def create_distribution_graph(csvs, plot="drawrate"):
     verbose_savefig(f"fencsv_{plot}.png")
 
 
+def line2fen(line):
+    line = line.strip()
+    if line and not line.startswith("#"):
+        fen = " ".join(line.split()[:4])
+        return fen[:-1] if fen[-1] == ";" else fen
+    return ""
+
+
+def read_cdb_scores_from_file(filename):
+    db = {}
+    with open_file(filename) as f:
+        for line in f:
+            fen = line2fen(line)
+            if fen == "":
+                continue
+            line = line.strip()
+            _, _, cdb = line.partition(" cdb eval: ")
+            if "ply" in cdb:
+                score, _, ply = cdb.partition(", ply: ")
+                ply = int(ply[:-1])
+            else:
+                score, _, _ = cdb.partition(";")
+                ply = None
+            if score == "":
+                continue
+            if fen not in db or (
+                ply is not None and (db[fen][1] is None or db[fen][1] > ply)
+            ):
+                db[fen] = (score, ply)
+    return db
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="A script to possibly filter and/or visualize CSV data produced by build/src/analysis. Can either be run for a single .csv to filter and plot, or for two .csv files to produce comparison plots.",
@@ -249,6 +317,10 @@ if __name__ == "__main__":
         "--bookFile",
         help="Filename with book exits. Allows saving of the book's CSV data, as well as index-dependent plot of frequencies.",
     )
+    parser.add_argument(
+        "--cdbFile",
+        help="Filename with cdb evaluations. Allows a scatter plot of observed draw-rates vs. cdb eval.",
+    )
     args = parser.parse_args()
     if len(args.filenames) > 2:
         print("No more than two .csv files allowed.")
@@ -282,6 +354,9 @@ if __name__ == "__main__":
         csv.calculate_stats()
         if args.bookFile:
             csv.create_games_per_exit_graph()
+        if args.cdbFile:
+            cdb = read_cdb_scores_from_file(args.cdbFile)
+            csv.create_cdb_scatter_plot(cdb)
         if args.drawRateMin is not None or args.drawRateMax is not None:
             csv.filter_exits(
                 args.drawRateMin, args.drawRateMax, args.drawRateGames, args.outFile
