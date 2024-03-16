@@ -182,17 +182,17 @@ class csvdata:
                 e = None
             if e is not None:
                 evals.append(abs(e))
-                dr = int(D / G * 100)
+                dr = D / G * 100
                 games.append(G)
                 drawrates.append(dr)
 
         fig, ax = plt.subplots()
         fig.suptitle(f"Draw rate vs (absolute) cdb eval.")
-        ax.set_title("(size of points = number of games played)", fontsize=7)
-        ax.scatter(drawrates, evals, s=games, alpha=0.01, label=self.prefix)
+        ax.set_title(f"Source: {self.prefix}.csv", fontsize=8)
+        alpha_fac = 10 * sum(games)**(-0.5)
+        ax.scatter(drawrates, evals, s=4, alpha=[alpha_fac * g for g in games])
         ax.set_xlabel("draw rate (in %)")
         ax.set_ylabel("(absolute) cdb eval (in cp)")
-        ax.legend(fontsize=6)
         verbose_savefig("cdb_scatter.png")
 
 
