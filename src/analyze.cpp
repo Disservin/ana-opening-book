@@ -157,10 +157,9 @@ class Analyzer : public pgn::Visitor {
     std::set<std::string> test_warned;
     for (const auto &pathname : file_list) {
         fs::path path(pathname);
-        std::string directory     = path.parent_path().string();
         std::string filename      = path.filename().string();
-        std::string test_id       = filename.substr(0, filename.find_last_of('-'));
-        std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
+        std::string test_id       = filename.substr(0, filename.find_first_of("-."));
+        std::string test_filename = (path.parent_path() / test_id).string();
 
         if (test_map.find(test_id) == test_map.end()) {
             test_map[test_id] = test_filename;
@@ -168,7 +167,7 @@ class Analyzer : public pgn::Visitor {
             if (test_warned.find(test_filename) == test_warned.end()) {
                 std::cout << (allow_duplicates ? "Warning" : "Error")
                           << ": Detected a duplicate of test " << test_id << " in directory "
-                          << directory << std::endl;
+                          << path.parent_path().string() << std::endl;
                 test_warned.insert(test_filename);
 
                 if (!allow_duplicates) {
@@ -195,8 +194,11 @@ class Analyzer : public pgn::Visitor {
 void filter_files_book(std::vector<std::string> &file_list, const map_meta &meta_map,
                        const std::regex &regex_book, bool invert) {
     const auto pred = [&regex_book, invert, &meta_map](const std::string &pathname) {
-        std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
-
+        fs::path path(pathname);
+        std::string filename      = path.filename().string();
+        std::string test_id       = filename.substr(0, filename.find_first_of("-."));
+        std::string test_filename = (path.parent_path() / test_id).string();
+      
         // check if metadata and "book" entry exist
         if (meta_map.find(test_filename) != meta_map.end() &&
             meta_map.at(test_filename).book.has_value()) {
@@ -214,7 +216,10 @@ void filter_files_book(std::vector<std::string> &file_list, const map_meta &meta
 
 void filter_files_sprt(std::vector<std::string> &file_list, const map_meta &meta_map) {
     const auto pred = [&meta_map](const std::string &pathname) {
-        std::string test_filename = pathname.substr(0, pathname.find_last_of('-'));
+        fs::path path(pathname);
+        std::string filename      = path.filename().string();
+        std::string test_id       = filename.substr(0, filename.find_first_of("-."));
+        std::string test_filename = (path.parent_path() / test_id).string();
 
         // check if metadata and "sprt" entry exist
         if (meta_map.find(test_filename) != meta_map.end() &&
