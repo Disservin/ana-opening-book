@@ -25,7 +25,7 @@ THIS FILE IS AUTO GENERATED DO NOT CHANGE MANUALLY.
 
 Source: https://github.com/Disservin/chess-library
 
-VERSION: 0.6.35
+VERSION: 0.6.55
 */
 
 #ifndef CHESS_HPP
@@ -39,17 +39,17 @@ VERSION: 0.6.35
 
 
 #if __cplusplus >= 202002L
-#include <bit>
+#    include <bit>
 #endif
-#include <string>
-#include <bitset>
 #include <algorithm>
-#include <iostream>
+#include <bitset>
 #include <cassert>
+#include <iostream>
+#include <string>
 
 #if defined(_MSC_VER)
-#include <intrin.h>
-#include <nmmintrin.h>
+#    include <intrin.h>
+#    include <nmmintrin.h>
 #endif
 
 
@@ -147,9 +147,7 @@ namespace utils {
     return result;
 }
 
-constexpr char tolower(char c) {
-    return (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c;
-}
+constexpr char tolower(char c) { return (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c; }
 
 }  // namespace utils
 
@@ -545,21 +543,20 @@ class Bitboard {
 #if !defined(_MSC_VER)
     constexpr
 #endif
-        int
-        lsb() const noexcept {
+        int lsb() const noexcept {
         assert(bits != 0);
 #if __cplusplus >= 202002L
         return std::countr_zero(bits);
 #else
-#if defined(__GNUC__)
+#    if defined(__GNUC__)
         return __builtin_ctzll(bits);
-#elif defined(_MSC_VER)
+#    elif defined(_MSC_VER)
         unsigned long idx;
         _BitScanForward64(&idx, bits);
         return static_cast<int>(idx);
-#else
-#error "Compiler not supported."
-#endif
+#    else
+#        error "Compiler not supported."
+#    endif
 #endif
     }
 
@@ -567,22 +564,21 @@ class Bitboard {
 #if !defined(_MSC_VER)
     constexpr
 #endif
-        int
-        msb() const noexcept {
+        int msb() const noexcept {
         assert(bits != 0);
 
 #if __cplusplus >= 202002L
         return std::countl_zero(bits) ^ 63;
 #else
-#if defined(__GNUC__)
+#    if defined(__GNUC__)
         return 63 ^ __builtin_clzll(bits);
-#elif defined(_MSC_VER)
+#    elif defined(_MSC_VER)
         unsigned long idx;
         _BitScanReverse64(&idx, bits);
         return static_cast<int>(idx);
-#else
-#error "Compiler not supported."
-#endif
+#    else
+#        error "Compiler not supported."
+#    endif
 #endif
     }
 
@@ -590,16 +586,15 @@ class Bitboard {
 #if !defined(_MSC_VER)
     constexpr
 #endif
-        int
-        count() const noexcept {
+        int count() const noexcept {
 #if __cplusplus >= 202002L
         return std::popcount(bits);
 #else
-#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#    if defined(_MSC_VER) || defined(__INTEL_COMPILER)
         return static_cast<int>(_mm_popcnt_u64(bits));
-#else
+#    else
         return __builtin_popcountll(bits);
-#endif
+#    endif
 #endif
     }
 
@@ -607,8 +602,7 @@ class Bitboard {
 #if !defined(_MSC_VER)
     constexpr
 #endif
-        std::uint8_t
-        pop() noexcept {
+        std::uint8_t pop() noexcept {
         assert(bits != 0);
         std::uint8_t index = lsb();
         bits &= bits - 1;
@@ -865,7 +859,7 @@ class attacks {
 
 #include <array>
 #include <cctype>
-#include <charconv>
+#include <optional>
 
 
 
@@ -881,6 +875,8 @@ constexpr auto MAX_MOVES             = 256;
 
 
 namespace chess {
+
+constexpr static std::string_view pieces = "PNBRQKpnbrqk ";
 
 class PieceType {
    public:
@@ -1014,48 +1010,15 @@ class Piece {
                 : type == PieceType::NONE ? Piece::NONE
                                           : static_cast<underlying>(static_cast<int>(color.internal()) * 6 + type)) {}
     constexpr Piece(std::string_view p) : piece(underlying::NONE) {
-        switch (p.data()[0]) {
-            case 'P':
-                piece = WHITEPAWN;
-                break;
-            case 'N':
-                piece = WHITEKNIGHT;
-                break;
-            case 'B':
-                piece = WHITEBISHOP;
-                break;
-            case 'R':
-                piece = WHITEROOK;
-                break;
-            case 'Q':
-                piece = WHITEQUEEN;
-                break;
-            case 'K':
-                piece = WHITEKING;
-                break;
-            // black
-            case 'p':
-                piece = BLACKPAWN;
-                break;
-            case 'n':
-                piece = BLACKKNIGHT;
-                break;
-            case 'b':
-                piece = BLACKBISHOP;
-                break;
-            case 'r':
-                piece = BLACKROOK;
-                break;
-            case 'q':
-                piece = BLACKQUEEN;
-                break;
-            case 'k':
-                piece = BLACKKING;
-                break;
-            default:
-                piece = NONE;
-                break;
+        for (std::size_t i = 0; i < pieces.size(); i++) {
+            if (p[0] == pieces[i]) {
+                piece = static_cast<underlying>(i);
+                return;
+            }
         }
+
+        piece = NONE;
+        return;
     }
 
     constexpr bool operator<(const Piece& rhs) const noexcept { return piece < rhs.piece; }
@@ -1104,13 +1067,12 @@ class Piece {
     constexpr operator int() const noexcept { return static_cast<int>(piece); }
 
     [[nodiscard]] constexpr PieceType type() const noexcept {
+        if (piece == NONE) return PieceType::NONE;
         return static_cast<PieceType::underlying>(int(piece) % 6);
     }
 
     [[nodiscard]] constexpr Color color() const noexcept {
-        if (piece == NONE) {
-            return Color::NONE;
-        }
+        if (piece == NONE) return Color::NONE;
         return static_cast<Color>(static_cast<int>(piece) / 6);
     }
 
@@ -1265,24 +1227,11 @@ class Movelist {
 
     // Iterators
 
-    [[nodiscard]] constexpr iterator begin() noexcept { return moves_.begin(); }
-    [[nodiscard]] constexpr const_iterator begin() const noexcept { return moves_.begin(); }
+    [[nodiscard]] constexpr iterator begin() noexcept { return &moves_[0]; }
+    [[nodiscard]] constexpr const_iterator begin() const noexcept { return &moves_[0]; }
 
-    [[nodiscard]] constexpr auto end() noexcept { return moves_.begin() + size_; }
-    [[nodiscard]] constexpr const_iterator end() const noexcept { return moves_.begin() + size_; }
-
-    [[nodiscard]] constexpr reverse_iterator rbegin() noexcept {
-        return moves_.rbegin() + (constants::MAX_MOVES - size_);
-    }
-
-    [[nodiscard]] constexpr const_reverse_iterator rbegin() const noexcept {
-        return moves_.rbegin() + (constants::MAX_MOVES - size_);
-    }
-
-    [[nodiscard]] constexpr reverse_iterator rend() noexcept { return moves_.rbegin() + constants::MAX_MOVES; }
-    [[nodiscard]] constexpr const_reverse_iterator rend() const noexcept {
-        return moves_.rbegin() + constants::MAX_MOVES;
-    }
+    [[nodiscard]] constexpr iterator end() noexcept { return &moves_[0] + size_; }
+    [[nodiscard]] constexpr const_iterator end() const noexcept { return &moves_[0] + size_; }
 
     // Capacity
 
@@ -1784,8 +1733,55 @@ class Board {
     };
 
    public:
-    explicit Board(std::string_view fen = constants::STARTPOS) { setFenInternal(fen); }
+    explicit Board(std::string_view fen = constants::STARTPOS) {
+        prev_states_.reserve(256);
+        setFenInternal(fen);
+    }
     virtual void setFen(std::string_view fen) { setFenInternal(fen); }
+
+    static Board fromFen(std::string_view fen) { return Board(fen); }
+    static Board fromEpd(std::string_view epd) {
+        Board board;
+        board.setEpd(epd);
+        return board;
+    }
+
+    void setEpd(const std::string_view epd) {
+        auto parts = utils::splitString(epd, ' ');
+
+        if (parts.size() < 1) throw std::runtime_error("Invalid EPD");
+
+        int hm = 0;
+        int fm = 1;
+
+        static auto parseStringViewToInt = [](std::string_view sv) -> std::optional<int> {
+            if (!sv.empty() && sv.back() == ';') sv.remove_suffix(1);
+            try {
+                size_t pos;
+                int value = std::stoi(std::string(sv), &pos);
+                if (pos == sv.size()) return value;
+            } catch (...) {
+            }
+            return std::nullopt;
+        };
+
+        if (auto it = std::find(parts.begin(), parts.end(), "hmvc"); it != parts.end()) {
+            auto num = *(it + 1);
+
+            hm = parseStringViewToInt(num).value_or(0);
+        }
+
+        if (auto it = std::find(parts.begin(), parts.end(), "fmvn"); it != parts.end()) {
+            auto num = *(it + 1);
+
+            fm = parseStringViewToInt(num).value_or(1);
+        }
+
+        auto fen = std::string(parts[0]) + " " + std::string(parts[1]) + " " + std::string(parts[2]) + " " +
+                   std::string(parts[3]) + " " + std::to_string(hm) + " " + std::to_string(fm);
+
+        setFen(fen);
+    }
 
     /// @brief Get the current FEN string.
     /// @return
@@ -1863,6 +1859,20 @@ class Board {
         return ss;
     }
 
+    [[nodiscard]] std::string getEpd() const {
+        std::string ss;
+        ss.reserve(100);
+
+        ss += getFen(false);
+        ss += " hmvc ";
+        ss += std::to_string(halfMoveClock()) + ";";
+        ss += " fmvn ";
+        ss += std::to_string(fullMoveNumber()) + ";";
+
+        return ss;
+    }
+
+    template <bool EXACT = false>
     void makeMove(const Move move) {
         const auto capture  = at(move.to()) != Piece::NONE && move.typeOf() != Move::CASTLING;
         const auto captured = at(move.to());
@@ -1918,9 +1928,28 @@ class Board {
 
                 // add enpassant hash if enemy pawns are attacking the square
                 if (static_cast<bool>(ep_mask & pieces(PieceType::PAWN, ~stm_))) {
-                    assert(at(move.to().ep_square()) == Piece::NONE);
-                    ep_sq_ = move.to().ep_square();
-                    key_ ^= Zobrist::enpassant(move.to().ep_square().file());
+                    if constexpr (EXACT) {
+                        static constexpr auto is_legal = [](const Board &board, Move move) {
+                            static Movelist moves;
+                            movegen::legalmoves(moves, board);
+
+                            return std::find(moves.begin(), moves.end(), move) != moves.end();
+                        };
+
+                        while (ep_mask) {
+                            const auto possible_move = Move::make(ep_mask.pop(), move.to().ep_square());
+                            if (is_legal(*this, possible_move)) {
+                                assert(at(move.to().ep_square()) == Piece::NONE);
+                                ep_sq_ = move.to().ep_square();
+                                key_ ^= Zobrist::enpassant(move.to().ep_square().file());
+                                break;
+                            }
+                        }
+                    } else {
+                        assert(at(move.to().ep_square()) == Piece::NONE);
+                        ep_sq_ = move.to().ep_square();
+                        key_ ^= Zobrist::enpassant(move.to().ep_square().file());
+                    }
                 }
             }
         }
@@ -2255,6 +2284,16 @@ class Board {
                 Square::same_color(pieces(PieceType::BISHOP, Color::WHITE).lsb(),
                                    pieces(PieceType::BISHOP, Color::BLACK).lsb()))
                 return true;
+
+            // one side with two bishops which have the same color
+            auto white_bishops = pieces(PieceType::BISHOP, Color::WHITE);
+            auto black_bishops = pieces(PieceType::BISHOP, Color::BLACK);
+
+            if (white_bishops.count() == 2) {
+                if (Square::same_color(white_bishops.lsb(), white_bishops.msb())) return true;
+            } else if (black_bishops.count() == 2) {
+                if (Square::same_color(black_bishops.lsb(), black_bishops.msb())) return true;
+            }
         }
 
         return false;
@@ -2352,17 +2391,33 @@ class Board {
     virtual void placePiece(Piece piece, Square sq) {
         assert(board_[sq.index()] == Piece::NONE);
 
-        pieces_bb_[piece.type()].set(sq.index());
-        occ_bb_[piece.color()].set(sq.index());
-        board_[sq.index()] = piece;
+        auto type  = piece.type();
+        auto color = piece.color();
+        auto index = sq.index();
+
+        assert(type != PieceType::NONE);
+        assert(color != Color::NONE);
+        assert(index >= 0 && index < 64);
+
+        pieces_bb_[type].set(index);
+        occ_bb_[color].set(index);
+        board_[index] = piece;
     }
 
     virtual void removePiece(Piece piece, Square sq) {
         assert(board_[sq.index()] == piece && piece != Piece::NONE);
 
-        pieces_bb_[piece.type()].clear(sq.index());
-        occ_bb_[piece.color()].clear(sq.index());
-        board_[sq.index()] = Piece::NONE;
+        auto type  = piece.type();
+        auto color = piece.color();
+        auto index = sq.index();
+
+        assert(type != PieceType::NONE);
+        assert(color != Color::NONE);
+        assert(index >= 0 && index < 64);
+
+        pieces_bb_[type].clear(index);
+        occ_bb_[color].clear(index);
+        board_[index] = Piece::NONE;
     }
 
     std::vector<State> prev_states_;
@@ -2393,45 +2448,80 @@ class Board {
         // find leading whitespaces and remove them
         while (fen[0] == ' ') fen.remove_prefix(1);
 
-        const auto params = utils::splitString(fen, ' ');
-        assert(params.size() >= 1);
+        static auto split_fen = [](std::string_view fen) {
+            std::array<std::optional<std::string_view>, 6> arr = {};
 
-        const auto position   = params[0];
-        const auto move_right = params.size() > 1 ? params[1] : "w";
-        const auto castling   = params.size() > 2 ? params[2] : "-";
-        const auto en_passant = params.size() > 3 ? params[3] : "-";
-        const auto half_move  = params.size() > 4 ? params[4] : "0";
-        const auto full_move  = params.size() > 5 ? params[5] : "1";
+            std::size_t start = 0;
+            std::size_t end   = 0;
+
+            for (std::size_t i = 0; i < 6; i++) {
+                end = fen.find(' ', start);
+                if (end == std::string::npos) {
+                    arr[i] = fen.substr(start);
+                    break;
+                }
+                arr[i] = fen.substr(start, end - start);
+                start  = end + 1;
+            }
+
+            return arr;
+        };
+
+        const auto params     = split_fen(fen);
+        const auto position   = params[0].has_value() ? *params[0] : "";
+        const auto move_right = params[1].has_value() ? *params[1] : "w";
+        const auto castling   = params[2].has_value() ? *params[2] : "-";
+        const auto en_passant = params[3].has_value() ? *params[3] : "-";
+        const auto half_move  = params[4].has_value() ? *params[4] : "0";
+        const auto full_move  = params[5].has_value() ? *params[5] : "1";
+
+        static auto parseStringViewToInt = [](std::string_view sv) -> std::optional<int> {
+            if (!sv.empty() && sv.back() == ';') sv.remove_suffix(1);
+            try {
+                size_t pos;
+                int value = std::stoi(std::string(sv), &pos);
+                if (pos == sv.size()) return value;
+            } catch (...) {
+            }
+            return std::nullopt;
+        };
 
         // Half move clock
-        std::from_chars(half_move.data(), half_move.data() + half_move.size(), hfm_);
+        hfm_ = parseStringViewToInt(half_move).value_or(0);
 
         // Full move number
-        std::from_chars(full_move.data(), full_move.data() + full_move.size(), plies_);
-        plies_ = plies_ * 2 - 2;
+        plies_ = parseStringViewToInt(full_move).value_or(1);
 
-        stm_ = (move_right == "w") ? Color::WHITE : Color::BLACK;
+        plies_ = plies_ * 2 - 2;
+        ep_sq_ = en_passant == "-" ? Square::underlying::NO_SQ : Square(en_passant);
+        stm_   = (move_right == "w") ? Color::WHITE : Color::BLACK;
+        key_   = 0ULL;
+        cr_.clear();
+        prev_states_.clear();
 
         if (stm_ == Color::BLACK) {
             plies_++;
+        } else {
+            key_ ^= Zobrist::sideToMove();
         }
 
-        auto square = Square(56);
+        if (ep_sq_ != Square::underlying::NO_SQ) key_ ^= Zobrist::enpassant(ep_sq_.file());
+
+        auto square = 56;
         for (char curr : position) {
-            auto piece_str = std::string_view(&curr, 1);
-            if (Piece(piece_str) != Piece::NONE) {
-                placePiece(Piece(piece_str), square);
-                square = Square(square.index() + 1);
-            } else if (curr == '/')
-                square = Square(square.index() - 16);
-            else if (isdigit(curr)) {
-                square = Square(square.index() + (curr - '0'));
+            if (isdigit(curr)) {
+                square += (curr - '0');
+            } else if (curr == '/') {
+                square -= 16;
+            } else {
+                auto p = Piece(std::string_view(&curr, 1));
+                placePiece(p, square);
+                key_ ^= Zobrist::piece(p, Square(square));
+                ++square;
             }
         }
 
-        cr_.clear();
-
-        const auto find_rook = [](const Board &board, CastlingRights::Side side, Color color) {
+        static const auto find_rook = [](const Board &board, CastlingRights::Side side, Color color) {
             const auto king_side = CastlingRights::Side::KING_SIDE;
             const auto king_sq   = board.kingSq(color);
             const auto sq_corner = Square(side == king_side ? Square::underlying::SQ_H1 : Square::underlying::SQ_A1)
@@ -2441,7 +2531,6 @@ class Board {
 
             for (Square sq = start; (side == king_side ? sq <= sq_corner : sq >= sq_corner);
                  (side == king_side ? sq++ : sq--)) {
-                // if (board.at<PieceType>(sq) == PieceType::NONE) continue;
                 if (board.at<PieceType>(sq) == PieceType::ROOK && board.at(sq).color() == color) {
                     return sq.file();
                 }
@@ -2486,12 +2575,9 @@ class Board {
             }
         }
 
-        ep_sq_ = en_passant == "-" ? Square::underlying::NO_SQ : Square(en_passant);
+        key_ ^= Zobrist::castling(cr_.hashIndex());
 
-        key_ = zobrist();
-
-        prev_states_.clear();
-        prev_states_.reserve(150);
+        assert(key_ == zobrist());
     }
 
     // store the original fen string
@@ -2748,11 +2834,6 @@ inline void attacks::initAttacks() {
         initSliders(static_cast<Square>(i), RookTable, RookMagics[i], rookAttacks);
     }
 }
-
-inline auto init = []() {
-    attacks::initAttacks();
-    return 0;
-}();
 }  // namespace chess
 
 
@@ -3325,12 +3406,14 @@ inline void movegen::legalmoves(Movelist &movelist, const Board &board, int piec
         legalmoves<Color::BLACK, mt>(movelist, board, pieces);
 }
 
-inline const std::array<std::array<Bitboard, 64>, 64> movegen::SQUARES_BETWEEN_BB = movegen::init_squares_between();
+inline const std::array<std::array<Bitboard, 64>, 64> movegen::SQUARES_BETWEEN_BB = [] {
+    attacks::initAttacks();
+    return movegen::init_squares_between();
+}();
 
 }  // namespace chess
 
 #include <istream>
-#include <optional>
 
 namespace chess::pgn {
 
@@ -3370,7 +3453,17 @@ class Visitor {
     bool skip_ = false;
 };
 
-template <std::size_t BUFFER_SIZE = 1024>
+template <std::size_t BUFFER_SIZE =
+#if defined(__unix__) || defined(__unix) || defined(unix) || defined(__APPLE__) || defined(__MACH__)
+#    if defined(__APPLE__) || defined(__MACH__)
+              256
+#    else
+              1024
+#    endif
+#else
+              256
+#endif
+          >
 class StreamParser {
    public:
     StreamParser(std::istream &stream) : stream_buffer(stream) {}
@@ -3453,6 +3546,11 @@ class StreamParser {
 
                 while (buffer_index_ < bytes_read_) {
                     const auto c = buffer_[buffer_index_];
+
+                    if (c == '\r') {
+                        buffer_index_++;
+                        continue;
+                    }
 
                     if constexpr (std::is_same_v<decltype(f(c)), bool>) {
                         const auto res = f(c);
@@ -3604,6 +3702,12 @@ class StreamParser {
                         }
                     });
 
+                    // manually skip carriage return, otherwise we would be in the body
+                    // ideally we should completely skip all carriage returns and newlines to avoid this
+                    if (stream_buffer.current() == '\r') {
+                        stream_buffer.advance();
+                    }
+
                     header.second.remove_suffix(1);
 
                     if (!visitor->skip()) visitor->header(header.first.get(), header.second.get());
@@ -3617,10 +3721,7 @@ class StreamParser {
                     in_header = false;
                     in_body   = true;
 
-                    visitor->startMoves();
-
-                    stream_buffer.advance();
-                    stream_buffer.advance();
+                    if (!visitor->skip()) visitor->startMoves();
 
                     return true;
                 default:
@@ -3634,14 +3735,16 @@ class StreamParser {
 
     void processBody() {
         auto is_termination_symbol = false;
+        auto has_comment           = false;
 
+    start:
         /*
         Skip first move number or game termination
         Also skip - * / to fix games
         which directly start with a game termination
         this https://github.com/Disservin/chess-library/issues/68
         */
-        stream_buffer.loop([this, &is_termination_symbol](char c) {
+        stream_buffer.loop([this, &is_termination_symbol, &has_comment](char c) {
             if (c == ' ' || is_digit(c)) {
                 stream_buffer.advance();
                 return false;
@@ -3649,10 +3752,36 @@ class StreamParser {
                 is_termination_symbol = true;
                 stream_buffer.advance();
                 return false;
+            } else if (c == '{') {
+                has_comment = true;
+
+                // reading comment
+                stream_buffer.advance();
+                stream_buffer.loop([this](char c) {
+                    stream_buffer.advance();
+
+                    if (c == '}') return true;
+
+                    comment += c;
+
+                    return false;
+                });
+
+                // the game has no moves, but a comment followed by a game termination
+                if (!visitor->skip()) {
+                    visitor->move("", comment.get());
+
+                    comment.clear();
+                }
             }
 
             return true;
         });
+
+        // we need to reparse the termination symbol
+        if (has_comment && !is_termination_symbol) {
+            goto start;
+        }
 
         // game had no moves, so we can skip it and call endPgn
         if (is_termination_symbol) {
@@ -3945,8 +4074,17 @@ class uci {
     /// @param uci
     /// @return
     [[nodiscard]] static Move uciToMove(const Board &board, const std::string &uci) noexcept(false) {
-        Square source   = Square(uci.substr(0, 2));
-        Square target   = Square(uci.substr(2, 2));
+        if (uci.length() < 4) {
+            return Move::NO_MOVE;
+        }
+
+        Square source = Square(uci.substr(0, 2));
+        Square target = Square(uci.substr(2, 2));
+
+        if (!source.is_valid() || !target.is_valid()) {
+            return Move::NO_MOVE;
+        }
+
         PieceType piece = board.at(source).type();
 
         // castling in chess960
@@ -3969,6 +4107,13 @@ class uci {
 
         // promotion
         if (piece == PieceType::PAWN && uci.length() == 5 && Square::back_rank(target, ~board.sideToMove())) {
+            auto promotion = PieceType(uci.substr(4, 1));
+
+            if (promotion != PieceType::QUEEN && promotion != PieceType::ROOK && promotion != PieceType::BISHOP &&
+                promotion != PieceType::KNIGHT) {
+                return Move::NO_MOVE;
+            }
+
             return Move::make<Move::PROMOTION>(source, target, PieceType(uci.substr(4, 1)));
         }
 
@@ -3976,7 +4121,7 @@ class uci {
             case 4:
                 return Move::make<Move::NORMAL>(source, target);
             default:
-                throw std::logic_error("UCI move has an unexpected length and cannot be safely converted." + uci);
+                return Move::NO_MOVE;
         }
     }
 
@@ -4028,6 +4173,10 @@ class uci {
 
     template <bool PEDANTIC = false>
     [[nodiscard]] static Move parseSan(const Board &board, std::string_view san, Movelist &moves) noexcept(false) {
+        if (san.empty()) {
+            return Move::NO_MOVE;
+        }
+
         constexpr auto pt_to_pgt      = [](PieceType pt) { return 1 << (pt); };
         const SanMoveInformation info = parseSanInfo<PEDANTIC>(san);
 
