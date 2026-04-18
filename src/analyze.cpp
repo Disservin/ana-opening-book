@@ -59,7 +59,7 @@ std::atomic<std::size_t> total_games  = 0;
 
 class Analyzer : public pgn::Visitor {
    public:
-    Analyzer(const CLIOptions &options) : options(options) {}
+    Analyzer(std::string_view file, const CLIOptions &options) : file(file), options(options) {}
     virtual ~Analyzer(){};
 
     // reset
@@ -132,8 +132,9 @@ class Analyzer : public pgn::Visitor {
             auto it         = options.fixfens.find(fen);
 
             if (it == options.fixfens.end()) {
-                std::cerr << "Could not find FEN " << fen << " in fixFENsource." << std::endl;
-                std::exit(1);
+                std::cerr << "Could not find FEN \"" << fen << "\" in fixFENsource." << std::endl;
+                std::cerr << "The FEN is from the file " << file << std::endl;
+                return value_str;
             }
 
             const auto &fix = it->second;
@@ -144,6 +145,7 @@ class Analyzer : public pgn::Visitor {
 
         return value_str;
     }
+    std::string_view file;
     Result result = Result::UNKNOWN;
     std::string fen;
     bool valid_game = true;
@@ -237,7 +239,7 @@ void filter_files_sprt(std::vector<std::string> &file_list, const map_meta &meta
 void analyze_pgn(const std::vector<std::string> &files, const CLIOptions &options) {
     for (const auto &file : files) {
         const auto pgn_iterator = [&](std::istream &iss) {
-            auto vis = std::make_unique<Analyzer>(options);
+            auto vis = std::make_unique<Analyzer>(file, options);
 
             pgn::StreamParser parser(iss);
 
