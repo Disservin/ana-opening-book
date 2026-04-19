@@ -1,6 +1,9 @@
 #include <iostream>
+#include <fstream>
+#include <mutex>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -21,13 +24,11 @@ using json   = nlohmann::json;
 enum class Result { WIN = 'W', DRAW = 'D', LOSS = 'L', UNKNOWN = 'U' };
 
 struct Statistics {
-    size_t wins   = 0;
-    size_t draws  = 0;
-    size_t losses = 0;
+    std::size_t wins   = 0;
+    std::size_t draws  = 0;
+    std::size_t losses = 0;
 
     double draw_rate() const { return double(draws) / total(); }
-
-    // for sorting according to draw rate
 
     bool operator<(const Statistics &other) const {
         if (draw_rate() == other.draw_rate()) {
@@ -45,7 +46,7 @@ struct Statistics {
         return draw_rate() < other.draw_rate();
     }
 
-    size_t total() const { return wins + draws + losses; }
+    std::size_t total() const { return wins + draws + losses; }
 };
 
 using map_t = phmap::parallel_flat_hash_map<
@@ -57,6 +58,9 @@ map_t occurance_map                   = {};
 std::atomic<std::size_t> total_chunks = 0;
 std::atomic<std::size_t> total_games  = 0;
 
+std::mutex pgn_out_mutex;
+std::ofstream pgn_out_stream;
+
 class Analyzer : public pgn::Visitor {
    public:
     Analyzer(std::string_view file, const CLIOptions &options) : file(file), options(options) {}
@@ -67,6 +71,12 @@ class Analyzer : public pgn::Visitor {
         result     = Result::UNKNOWN;
         fen        = chess::constants::STARTPOS;
         valid_game = true;
+        fen_match  = false;
+
+        if (!options.match_fen.empty()) {
+            headers.clear();
+            moves.clear();
+        }
     }
 
     void header(std::string_view key, std::string_view value) override {
@@ -86,13 +96,20 @@ class Analyzer : public pgn::Visitor {
                 valid_game = false;
             }
         }
+        if (!options.match_fen.empty()) {
+            headers.emplace_back(key, value);
+        }
     }
 
-    // last fen was parsed
     void startMoves() override {
         skipPgn(true);
 
         if (result == Result::UNKNOWN || !valid_game) return;
+
+        if (!options.match_fen.empty() && std::regex_match(fen, options.regex_fen)) {
+            fen_match = true;
+            skipPgn(false);
+        }
 
         const auto fixed_fen = fixFen(fen);
 
@@ -115,9 +132,66 @@ class Analyzer : public pgn::Visitor {
         total_games++;
     }
 
-    void move(std::string_view, std::string_view) override {}
+    void move(std::string_view san, std::string_view comment) override {
+        if (fen_match) moves.emplace_back(san, comment);
+    }
 
-    void endPgn() override {}
+    void endPgn() override {
+        if (fen_match) {
+            const std::lock_guard<std::mutex> lock(pgn_out_mutex);
+
+            for (const auto &[k, v] : headers) {
+                pgn_out_stream << "[" << k << " \"" << v << "\"]\n";
+            }
+            pgn_out_stream << "\n";
+
+            std::istringstream iss(fen);
+            std::string board, stm;
+            iss >> board >> stm;
+            bool wtm     = (stm == "w");
+            int fm       = 1;
+            int line_len = 0;
+
+            for (const auto &[san, comment] : moves) {
+                if (!san.empty()) {
+                    if (wtm) {
+                        const std::string s = std::to_string(fm) + ". ";
+                        pgn_out_stream << s;
+                        line_len += s.length();
+                    } else if (fm == 1) {
+                        pgn_out_stream << "1... ";
+                        line_len += 5;
+                    }
+
+                    pgn_out_stream << san << " ";
+                    line_len += san.length() + 1;
+                }
+                if (!comment.empty()) {
+                    pgn_out_stream << "{" << comment << "} ";
+                    line_len += comment.length() + 3;
+                }
+
+                if (line_len > 70) {
+                    pgn_out_stream << "\n";
+                    line_len = 0;
+                }
+
+                if (!wtm) fm++;
+                wtm = !wtm;
+            }
+
+            if (result == Result::WIN) {
+                pgn_out_stream << "1-0";
+            } else if (result == Result::LOSS) {
+                pgn_out_stream << "0-1";
+            } else if (result == Result::DRAW) {
+                pgn_out_stream << "1/2-1/2";
+            } else pgn_out_stream << "*";
+
+            pgn_out_stream << "\n\n";
+        }
+    }
+
 
    private:
     std::string fixFen(std::string_view fen_view) {
@@ -149,6 +223,9 @@ class Analyzer : public pgn::Visitor {
     Result result = Result::UNKNOWN;
     std::string fen;
     bool valid_game = true;
+    bool fen_match  = false;
+    std::vector<std::pair<std::string, std::string>> headers;
+    std::vector<std::pair<std::string, std::string>> moves;
     const CLIOptions &options;
 };
 
@@ -357,7 +434,6 @@ void write_results() {
 
     out << "FEN, Wins, Draws, Losses\n";
 
-    // Sort the map by the number of wins, draws, and losses
     std::vector<std::pair<std::string, Statistics>> sorted_map(occurance_map.begin(),
                                                                occurance_map.end());
 
@@ -385,6 +461,7 @@ void write_results() {
 
 /// @brief ./analysis [--dir path] [--concurrency n] [--matchBook book]
 /// [--allowDuplicates] [--SPRTonly] [--matchBookInvert] [--fixFENsource file]
+/// [--matchFEN fen] [--pgnOutput file]
 /// @param argc
 /// @param argv
 /// @return
@@ -436,6 +513,36 @@ int main(int argc, char const *argv[]) {
         std::cout << "Read in move counters to possibly fix FENs from " << file << std::endl;
     }
 
+    if (cmd.has("--pgnOutput"))
+        options.pgn_output = cmd.get("--pgnOutput");
+    else
+        options.pgn_output = "match_fen.pgn";
+
+    if (cmd.has("--matchFEN")) {
+        options.match_fen = cmd.get("--matchFEN");
+
+        if (options.match_fen.empty()) {
+            std::cerr << "Error: --matchFEN cannot be empty" << std::endl;
+            return 1;
+        }
+
+        // For example:
+        // --matchFEN "(r2qkb1r/1pp2ppp/p1np1n2/3Pp3/4P3/2NBBQ2/PPP2PPP/R3K2R b KQkq.*|r2q1rk1/ppp1bppp/2np1n2/4p3/2B1P1b1/BPN2NP1/P1PP1P1P/R2QK2R w KQ.*)"
+        options.regex_fen = std::regex(options.match_fen);
+
+        std::cout << "Save to " << options.pgn_output 
+                  << " all the games with FEN tag matching " 
+                  << options.match_fen << std::endl;
+
+        pgn_out_stream.open(options.pgn_output);
+
+        if (!pgn_out_stream.is_open()) {
+            std::cerr << "Error: Failed to open output file: " << options.pgn_output
+                      << std::endl;
+            return 1;
+        }
+    }
+
     const auto t0 = std::chrono::high_resolution_clock::now();
     process(options);
     const auto t1 = std::chrono::high_resolution_clock::now();
@@ -445,6 +552,11 @@ int main(int argc, char const *argv[]) {
               << "s" << std::endl;
 
     write_results();
+
+    if (pgn_out_stream.is_open()) {
+        pgn_out_stream.close();
+        std::cout << "Wrote matching games to " << options.pgn_output << std::endl;
+    }
 
     return 0;
 }
